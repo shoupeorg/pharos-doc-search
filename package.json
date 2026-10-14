@@ -8,7 +8,7 @@
     "pharos-docs": "./bin/pharos-docs.js"
   },
   "scripts": {
-    "build": "esbuild ./src/worker.js --bundle --format=esm --platform=browser --target=es2022 --outfile=worker.js",
+    "build": "esbuild ./src/worker.js --bundle --format=esm --platform=browser --target=es2022 --outfile=worker.js && esbuild ./src/web.js --bundle --minify --format=iife --platform=browser --target=es2022 --outfile=public/app.js",
     "check": "node --test",
     "smoke": "node ./scripts/smoke.js",
     "deploy": "npm run build && wrangler deploy --no-bundle",
@@ -16,7 +16,9 @@
     "login": "wrangler login"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.1"
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "dompurify": "^3.4.17",
+    "marked": "^18.1.1"
   },
   "devDependencies": {
     "esbuild": "0.27.3",

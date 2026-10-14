@@ -18896,9 +18896,10 @@ var StreamableHTTPClientTransport = class {
 
 // src/docs-mcp.js
 var DOCS_MCP_URL = "https://docs.pharos.xyz/~gitbook/mcp";
-var ANSWER_TOOL = "askQuestion";
+var DOCS_BASE_URL = "https://docs.pharos.xyz/";
 var REQUIRED_TOOLS = ["searchDocumentation", "getPage", "askQuestion"];
-var ANSWER_GOAL = "Give a concise answer supported only by docs.pharos.xyz. Include relevant source links or section references. If the documentation does not support an answer, say exactly: No good answer found.";
+var MAX_INITIAL_PAGES = 2;
+var MAX_CITED_PAGES = 8;
 var DocsMcpError = class extends Error {
   constructor(kind, message, cause) {
     super(message, { cause });
@@ -18915,21 +18916,76 @@ function normalizeQuestion(value) {
 function extractText(result) {
   return (result?.content ?? []).filter((item) => item.type === "text" && typeof item.text === "string").map((item) => item.text.trim()).filter(Boolean).join("\n\n").trim();
 }
+function toOfficialDocsUrl(value) {
+  try {
+    const url2 = new URL(value, DOCS_BASE_URL);
+    if (url2.protocol !== "https:" || url2.hostname !== "docs.pharos.xyz") return null;
+    url2.hash = "";
+    return url2.href;
+  } catch {
+    return null;
+  }
+}
 function extractSources(text) {
   const seen = /* @__PURE__ */ new Set();
   const sources = [];
-  for (const match of text.matchAll(/\[([^\]]+)]\((https:\/\/docs\.pharos\.xyz\/[^)]+)\)/g)) {
-    if (seen.has(match[2])) continue;
-    seen.add(match[2]);
-    sources.push({ title: match[1], url: match[2] });
+  for (const match of String(text ?? "").matchAll(/\[([^\]]+)]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g)) {
+    const url2 = toOfficialDocsUrl(match[2]);
+    if (!url2 || seen.has(url2)) continue;
+    seen.add(url2);
+    sources.push({ title: match[1], url: url2 });
   }
   return sources;
 }
-function classifyAnswer(question, text) {
-  if (!text || /^no good answer found\.?$/i.test(text.trim())) {
+function parseSearchResults(text) {
+  const blocks = String(text ?? "").split(/(?=^Title:\s*)/gm);
+  const results = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const block of blocks) {
+    const title = block.match(/^Title:\s*(.+)$/m)?.[1]?.trim();
+    const rawUrl = block.match(/^Link:\s*(\S+)$/m)?.[1]?.trim();
+    const url2 = toOfficialDocsUrl(rawUrl);
+    if (!title || !url2 || seen.has(url2)) continue;
+    seen.add(url2);
+    results.push({ title, url: url2, snippet: block.match(/^Content:\s*([\s\S]*)$/m)?.[1]?.trim() ?? "" });
+  }
+  return results;
+}
+function buildSearchQuery(question) {
+  const lower = question.toLowerCase();
+  if (lower.includes("hardhat") && /deploy|contract|ignition/.test(lower)) {
+    return `${question} Write Your First Token Ignition hardhat.config example repository`;
+  }
+  if (/mainnet|pacific/.test(lower) && /setting|network|rpc|chain/.test(lower)) {
+    return `${question} Pacific Mainnet chain ID RPC explorer`;
+  }
+  return `${question} official guide configuration example`;
+}
+function rankSearchResults(results, question) {
+  const lower = question.toLowerCase();
+  return results.map((result, index) => {
+    const haystack = `${result.title} ${result.url} ${result.snippet}`.toLowerCase();
+    let score = -index;
+    for (const term of lower.match(/[a-z0-9]+/g) ?? []) {
+      if (term.length >= 4 && haystack.includes(term)) score += 2;
+    }
+    if (lower.includes("hardhat") && result.url.includes("/developer-guide/hardhat/")) score += 12;
+    if (lower.includes("hardhat") && /validator|foundry/.test(result.url)) score -= 20;
+    if (/deploy|contract/.test(lower) && /deploy the contract|hardhat ignition/.test(haystack)) score += 7;
+    if (lower.includes("hardhat") && result.url.endsWith("/write-your-first-token")) score += 4;
+    if (/mainnet|pacific/.test(lower) && result.url.endsWith("/pacific-mainnet")) score += 15;
+    return { ...result, score };
+  }).sort((a, b) => b.score - a.score).map(({ score: _score, ...result }) => result);
+}
+function stripSourcesSection(text) {
+  return String(text ?? "").replace(/\n#{1,6}\s+Sources\s*\n[\s\S]*$/i, "").trim();
+}
+function classifyAnswer(question, text, sources = extractSources(text)) {
+  const answer = stripSourcesSection(text);
+  if (!answer || /^no good answer found\.?/i.test(answer)) {
     return { status: "no_answer", question, answer: "No good answer found.", sources: [] };
   }
-  return { status: "success", question, answer: text, sources: extractSources(text) };
+  return { status: "success", question, answer, sources };
 }
 function withTimeout(promise, timeoutMs) {
   let timer;
@@ -18940,25 +18996,55 @@ function withTimeout(promise, timeoutMs) {
     })
   ]).finally(() => clearTimeout(timer));
 }
-async function askDocs(questionInput, { timeoutMs = 6e4, verifyTools = false } = {}) {
+async function callTextTool(client, name, args, timeoutMs) {
+  const result = await withTimeout(client.callTool({ name, arguments: args }), timeoutMs);
+  if (result?.isError) throw new DocsMcpError("connection", extractText(result) || `Developer Docs MCP ${name} failed.`);
+  return extractText(result);
+}
+async function retrievePage(client, source, timeoutMs) {
+  const content = await callTextTool(client, "getPage", { url: source.url }, timeoutMs);
+  if (!content) throw new DocsMcpError("connection", `Developer Docs MCP returned an empty page for ${source.url}`);
+  return { ...source, content };
+}
+function answerGoal(pages, question) {
+  const pageList = pages.map((page) => `- ${page.url}`).join("\n") || "- None";
+  const hardhatRequirements = question.toLowerCase().includes("hardhat") ? "For Hardhat deployment, use one example only. State prerequisites, repo/directory, known version/config syntax, network/RPC, key setup, dependencies, compile command, Ignition path and selected network. Flag missing version details or confusing step order; do not mix examples." : "";
+  const networkRequirements = /mainnet|pacific/i.test(question) ? "For network settings, include the documented network name, chain ID, currency, RPC and explorer." : "";
+  return [
+    "Answer in concise Markdown using only the complete Pharos pages retrieved with getPage below.",
+    "Preserve commands/config exactly. Do not fill missing details from memory or claim independent testing. State uncertainties.",
+    "Link only to these pages. If unsupported, say exactly: No good answer found.",
+    hardhatRequirements,
+    networkRequirements,
+    "Retrieved full pages:",
+    pageList
+  ].filter(Boolean).join("\n");
+}
+async function askDocs(questionInput, { timeoutMs = 6e4 } = {}) {
   const question = normalizeQuestion(questionInput);
-  const client = new Client({ name: "pharos-doc-search", version: "1.0.0" });
+  const client = new Client({ name: "pharos-doc-search", version: "1.1.0" });
   try {
-    await withTimeout(
-      client.connect(new StreamableHTTPClientTransport(new URL(DOCS_MCP_URL))),
-      timeoutMs
-    );
-    if (verifyTools) {
-      const available = (await withTimeout(client.listTools(), timeoutMs)).tools.map((tool) => tool.name);
-      const missing = REQUIRED_TOOLS.filter((tool) => !available.includes(tool));
-      if (missing.length) throw new DocsMcpError("connection", `Developer Docs MCP is missing required tools: ${missing.join(", ")}`);
+    await withTimeout(client.connect(new StreamableHTTPClientTransport(new URL(DOCS_MCP_URL))), timeoutMs);
+    const available = (await withTimeout(client.listTools(), timeoutMs)).tools.map((tool) => tool.name);
+    const missing = REQUIRED_TOOLS.filter((tool) => !available.includes(tool));
+    if (missing.length) throw new DocsMcpError("connection", `Developer Docs MCP is missing required tools: ${missing.join(", ")}`);
+    const searchText = await callTextTool(client, "searchDocumentation", { query: buildSearchQuery(question) }, timeoutMs);
+    const candidates = rankSearchResults(parseSearchResults(searchText), question).slice(0, MAX_INITIAL_PAGES);
+    const pages = [];
+    for (const candidate of candidates) pages.push(await retrievePage(client, candidate, timeoutMs));
+    const answerText = await callTextTool(client, "askQuestion", { question, goal: answerGoal(pages, question) }, timeoutMs);
+    const provisional = classifyAnswer(question, answerText);
+    if (provisional.status === "no_answer") return provisional;
+    const verified = new Map(pages.map((page) => [page.url, page]));
+    const cited = extractSources(stripSourcesSection(answerText)).slice(0, MAX_CITED_PAGES);
+    for (const source of cited) {
+      if (!verified.has(source.url)) verified.set(source.url, await retrievePage(client, source, timeoutMs));
     }
-    const result = await withTimeout(
-      client.callTool({ name: ANSWER_TOOL, arguments: { question, goal: ANSWER_GOAL } }),
-      timeoutMs
-    );
-    if (result?.isError) throw new DocsMcpError("connection", extractText(result) || "Developer Docs MCP returned an error.");
-    return classifyAnswer(question, extractText(result));
+    const sources = cited.filter((source) => verified.has(source.url)).map((source) => ({ title: source.title, url: source.url }));
+    if (!sources.length) {
+      return { status: "no_answer", question, answer: "No good answer found.", sources: [] };
+    }
+    return classifyAnswer(question, answerText, sources);
   } catch (error2) {
     if (error2 instanceof DocsMcpError) throw error2;
     throw new DocsMcpError("connection", `Developer Docs MCP connection failed: ${error2?.message || "unknown error"}`, error2);

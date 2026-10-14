@@ -8,26 +8,18 @@ A command-line and web documentation assistant for the Pharos Agent Arena **Doc-
 - **Authentication:** none required at the time of verification
 - **Official discovery sources:** [AI.PHAROS](https://ai.pharos.xyz) and [Pharos Developer Docs](https://docs.pharos.xyz)
 
-Developer Docs MCP is separate from the Pharos Chain MCP. This project never sends a documentation query to `mcp.pharos.xyz`, scrapes pages, fetches docs directly as a fallback, or serves hardcoded answers.
+Developer Docs MCP is separate from the Pharos Chain MCP. This project does not scrape documentation, call a direct-doc fallback, or serve hardcoded answers.
 
-## Verified MCP discovery
+## Verified MCP tools
 
-On 2026-10-14, `ai.pharos.xyz` presented **Pharos Docs MCP** as a distinct agent option. The official `docs.pharos.xyz` page metadata advertised its MCP connection URL as:
+An unauthenticated connection through the official MCP SDK returned:
 
-```text
-https://docs.pharos.xyz/~gitbook/mcp
-```
-
-An unauthenticated Streamable HTTP connection through the official MCP SDK returned these tools:
-
-| Tool | Purpose |
+| Tool | Use in this project |
 | --- | --- |
-| `searchDocumentation` | Search documentation and return contextual matches with links. |
-| `getPage` | Retrieve a complete documentation page by URL. |
-| `askQuestion` | Produce a synthesized answer with links to its source pages. |
-| `sendFeedback` | Report a documentation issue; this application does not call it. |
-
-The pre-build verification called `searchDocumentation` with `how do I deploy a contract?` and returned real results including the Hardhat and Foundry deployment guides.
+| `searchDocumentation` | Find candidate official pages for the question. |
+| `getPage` | Retrieve complete Markdown for the selected pages and every cited page. |
+| `askQuestion` | Synthesize the final answer, constrained to the retrieved pages. |
+| `sendFeedback` | Available from the server; not called by this application. |
 
 Generic MCP client configuration:
 
@@ -49,16 +41,16 @@ Requires Node.js 20+ and npm.
 ```bash
 npm install
 npm link
-pharos-docs "how do I deploy a contract?"
+pharos-docs "How do I deploy a contract with Hardhat on Pharos?"
 ```
 
 Without `npm link`:
 
 ```bash
-node ./bin/pharos-docs.js "how do I deploy a contract?"
+node ./bin/pharos-docs.js "What are the Pharos mainnet network settings?"
 ```
 
-Run verification and a real MCP smoke test:
+Run unit checks and a real MCP smoke test:
 
 ```bash
 npm run check
@@ -72,12 +64,7 @@ npm install
 npm run dev
 ```
 
-Open the local URL printed by Wrangler. Enter a natural-language question and select **Search**. The interface distinguishes:
-
-- **Loading:** the MCP request is still in flight.
-- **Success:** a synthesized answer and official sources were returned.
-- **No answer:** the docs did not support an answer and the UI says `No good answer found`.
-- **Error/timeout:** the MCP connection failed or exceeded the request deadline.
+The web interface distinguishes loading, success, no-answer, connection-error, and timeout states. Its answer panel uses Marked plus DOMPurify: raw HTML is rendered as text, unsafe URL protocols are rejected, relative documentation links resolve against `https://docs.pharos.xyz/`, and external links use `rel="noopener noreferrer"`.
 
 Deploy to the configured free `workers.dev` route:
 
@@ -87,84 +74,78 @@ npm run deploy
 
 ## How answers are grounded
 
-The shared client in `src/docs-mcp.js` calls the MCP `askQuestion` tool with an instruction to answer only from `docs.pharos.xyz`, include relevant source links, and return exactly `No good answer found.` when the docs do not support an answer. Source links are extracted only from the MCP response. There is no secondary search provider or direct-doc fallback.
+The shared client in `src/docs-mcp.js`, used by both CLI and Worker API, performs this sequence:
 
-The Worker keeps the MCP connection server-side. The current official endpoint requires no credential; no browser receives MCP session data or a secret.
+1. `searchDocumentation` finds official candidate pages.
+2. `getPage` retrieves their complete Markdown.
+3. `askQuestion` is instructed to use only those pages, preserve documented commands/configuration, avoid mixing examples, and state uncertainty rather than fill gaps from memory.
+4. Every page cited by the synthesized answer is retrieved with `getPage` before the response is returned.
+
+If the docs do not support the question, the result is exactly `No good answer found.` A missing verified source also fails closed as no-answer. MCP connection failures and timeouts remain separate errors.
+
+## Hardhat accuracy audit
+
+The complete [Write Your First Token](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-token) page was retrieved through `getPage` and checked against the answer.
+
+- The documented example is `https://github.com/PharosNetwork/examples`, directory `examples/token/hardhat/contract`.
+- The page documents `npm install`, `npx hardhat compile`, `npx hardhat vars set PRIVATE_KEY`, and `npx hardhat ignition deploy ./ignition/modules/Token.js --network pharos`.
+- It provides separate `pharos` configurations for Testnet (`https://testnet.dplabs-internal.com`, chain ID `688688`) and Atlantic Testnet (`https://atlantic.dplabs-internal.com`, chain ID `688689`). A response must select one; it must not combine them or present either as Pacific Mainnet.
+- The page does not state a Hardhat package version and does not include the Ignition module contents. It also places network configuration under the later verification step even though `--network pharos` needs that configuration for deployment. The answer now states these limitations.
+- The documented repository was cloned separately for a non-broadcast local check. Its package ranges at verification time were Hardhat `^2.22.17`, toolbox `^5.0.0`, and OpenZeppelin Contracts `^5.1.0`; `ignition/modules/Token.js` exists. With a disposable dummy key supplied only as `HARDHAT_VAR_PRIVATE_KEY`, `npx hardhat compile` compiled six Solidity files using compiler `0.8.28`. This independently checks configuration/compilation only; no deployment command was run and no transaction was signed or broadcast.
 
 ## Recorded real examples
 
-These outputs were returned by the CLI through Developer Docs MCP on 2026-10-14. They are recorded examples, not hardcoded application responses.
+These are actual CLI responses returned through Developer Docs MCP on 2026-10-15. They are snapshots, not hardcoded responses, so wording can change when the official documentation or MCP synthesis changes.
 
-### 1. Deploy a contract
+### Hardhat deployment
 
 ```text
 $ pharos-docs "How do I deploy a contract with Hardhat on Pharos?"
 
-Use Hardhat Ignition to deploy. The Pharos guide provides testnet and Atlantic Testnet configurations in Write Your First Token.
+Use the ERC-20 token example and deploy it to Pharos Testnet. You need Git, Node.js, Hardhat, and access to a Pharos node. The Write Your First Token page does not specify a Hardhat version.
 
-1. Configure hardhat.config.js with your chosen testnet RPC. For Atlantic Testnet, use https://atlantic.dplabs-internal.com.
-2. Store the deployer key, then compile and deploy:
+1. Clone the example and install its dependencies:
+   git clone https://github.com/PharosNetwork/examples
+   cd examples/token/hardhat/contract
+   npm install
+2. Configure hardhat.config.js for Testnet, using network pharos, RPC https://testnet.dplabs-internal.com, and chain ID 688688.
+3. Set the Hardhat variable, then compile and deploy:
+   npx hardhat vars set PRIVATE_KEY
+   npx hardhat compile
+   npx hardhat ignition deploy ./ignition/modules/Token.js --network pharos
 
-npx hardhat vars set PRIVATE_KEY
-npx hardhat compile
-npx hardhat ignition deploy ./ignition/modules/Token.js --network pharos
-
-Ensure the deployer has enough testnet tokens for deployment fees.
+The Solidity example uses pragma solidity ^0.8.20; the config specifies 0.8.28. The guide does not provide the Ignition module contents, including how it supplies the token constructor's initialSupply. It presents network configuration under verification, but that configuration must be in place before deployment.
 ```
 
-Sources returned by MCP:
+Verified source returned by MCP:
 
 - [Write Your First Token](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-token)
-- [Hardhat](https://docs.pharos.xyz/developer-guide/hardhat)
-- [Write Your First dApp](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-dapp)
 
-### 2. Pacific Mainnet settings
+### Pacific Mainnet settings
 
 ```text
-$ pharos-docs "What are the Pharos Pacific Mainnet network settings?"
+$ pharos-docs "What are the Pharos mainnet network settings?"
 
-Pacific Mainnet settings:
-
-* Network: Pharos Pacific Mainnet
+Pharos Pacific Mainnet settings:
+* Network name: Pharos Pacific Mainnet
 * Chain ID: 1672
-* Currency symbol: PROS
+* Currency: PROS
 * RPC URL: https://rpc.pharos.xyz
-* Block explorer: https://www.pharosscan.xyz
+* Explorer: https://www.pharosscan.xyz
 ```
 
-Sources returned by MCP:
+Verified source returned by MCP:
 
-- [Pacific Mainnet](https://docs.pharos.xyz/getting-started/network/pacific-mainnet)
-- [Network](https://docs.pharos.xyz/getting-started/network)
-
-### 3. Get PROS gas
-
-```text
-$ pharos-docs "How do I get PROS gas?"
-
-Get PROS through Pharos Port at https://port.pharos.xyz/get-pros.
-
-* Already have crypto: use Halliday or withdraw from an exchange using the Pharos network.
-* Paying with fiat: use Halliday or Alchemy Pay.
-* Need a wallet too: use TopNod, then buy or deposit PROS.
-
-Confirm the destination address and network, then check the received balance on Pharos Scan.
-```
-
-Sources returned by MCP:
-
-- [Get PROS Gas](https://docs.pharos.xyz/getting-started/get-pros-gas)
-- [Gas Model](https://docs.pharos.xyz/getting-started/gas-model)
 - [Pacific Mainnet](https://docs.pharos.xyz/getting-started/network/pacific-mainnet)
 
 ### Unsupported question
 
 ```text
-$ pharos-docs "What is the weather in Tehran tomorrow?"
+$ pharos-docs "What is the weather in Beijing tomorrow?"
 No good answer found.
 ```
 
-This is a successful MCP response with no documentation support. It is distinct from a connection failure or timeout, which is printed as an error and returns a non-zero CLI exit code.
+This is a successful MCP response with no documentation support. It is distinct from a connection failure or timeout, which prints an error and returns a non-zero CLI exit code.
 
 ## HTTP interface
 
