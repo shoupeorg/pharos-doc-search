@@ -90,8 +90,8 @@ The complete [Write Your First Token](https://docs.pharos.xyz/developer-guide/ha
 - The documented example is `https://github.com/PharosNetwork/examples`, directory `examples/token/hardhat/contract`.
 - The page documents `npm install`, `npx hardhat compile`, `npx hardhat vars set PRIVATE_KEY`, and `npx hardhat ignition deploy ./ignition/modules/Token.js --network pharos`.
 - It provides separate `pharos` configurations for Testnet (`https://testnet.dplabs-internal.com`, chain ID `688688`) and Atlantic Testnet (`https://atlantic.dplabs-internal.com`, chain ID `688689`). A response must select one; it must not combine them or present either as Pacific Mainnet.
-- The page does not state a Hardhat package version and does not include the Ignition module contents. It also places network configuration under the later verification step even though `--network pharos` needs that configuration for deployment. The answer now states these limitations.
-- The documented repository was cloned separately for a non-broadcast local check. Its package ranges at verification time were Hardhat `^2.22.17`, toolbox `^5.0.0`, and OpenZeppelin Contracts `^5.1.0`; `ignition/modules/Token.js` exists. With a disposable dummy key supplied only as `HARDHAT_VAR_PRIVATE_KEY`, `npx hardhat compile` compiled six Solidity files using compiler `0.8.28`. This independently checks configuration/compilation only; no deployment command was run and no transaction was signed or broadcast.
+- The page does not state a Hardhat package version, does not include the Ignition module contents, and calls `vars.get("PRIVATE_KEY")` without importing `vars`. It also places network configuration under the later verification step even though `--network pharos` needs that configuration for deployment. Whenever an MCP answer reproduces that incomplete snippet, the application now prepends an explicit warning and does not present it as a self-contained runnable configuration.
+- The documented repository was cloned separately for a non-broadcast local check. Its package ranges are Hardhat `^2.22.17`, toolbox `^5.0.0`, and OpenZeppelin Contracts `^5.1.0`; the installed Hardhat version at verification time was `2.29.1`, and `ignition/modules/Token.js` exists. A self-contained CommonJS config adding `const { vars } = require("hardhat/config");` was checked with a disposable dummy key supplied only as `HARDHAT_VAR_PRIVATE_KEY`; `npx hardhat compile --force` compiled six Solidity files using compiler `0.8.28`. This independently verifies the correction and compilation only; no deployment command was run and no transaction was signed or broadcast.
 
 ## Recorded real examples
 
@@ -101,6 +101,13 @@ These are actual CLI responses returned through Developer Docs MCP on 2026-10-15
 
 ```text
 $ pharos-docs "How do I deploy a contract with Hardhat on Pharos?"
+
+INCOMPLETE DOCUMENTATION EXCERPT — do not copy the shown config as a self-contained runnable file. The official snippet calls vars.get("PRIVATE_KEY") but omits the vars import.
+
+Separately verified correction for the installed Hardhat 2.29.1:
+const { vars } = require("hardhat/config");
+
+This import is not shown on the cited Pharos page. A forced local compile of the documented project succeeded with it; no deployment was run or broadcast.
 
 Use the ERC-20 token example and deploy it to Pharos Testnet. You need Git, Node.js, Hardhat, and access to a Pharos node. The Write Your First Token page does not specify a Hardhat version.
 

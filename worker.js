@@ -18900,6 +18900,9 @@ var DOCS_BASE_URL = "https://docs.pharos.xyz/";
 var REQUIRED_TOOLS = ["searchDocumentation", "getPage", "askQuestion"];
 var MAX_INITIAL_PAGES = 2;
 var MAX_CITED_PAGES = 8;
+var VERIFIED_HARDHAT_VERSION = "2.29.1";
+var HARDHAT_VARS_USAGE = /\bvars\.get\(\s*["']PRIVATE_KEY["']\s*\)/;
+var HARDHAT_VARS_IMPORT = /\b(?:const|let|var)\s*\{\s*vars\s*\}\s*=\s*require\(\s*["']hardhat\/config["']\s*\)/;
 var DocsMcpError = class extends Error {
   constructor(kind, message, cause) {
     super(message, { cause });
@@ -18980,6 +18983,24 @@ function rankSearchResults(results, question) {
 function stripSourcesSection(text) {
   return String(text ?? "").replace(/\n#{1,6}\s+Sources\s*\n[\s\S]*$/i, "").trim();
 }
+function discloseIncompleteHardhatVarsExcerpt(text) {
+  const answer = String(text ?? "");
+  if (!HARDHAT_VARS_USAGE.test(answer) || HARDHAT_VARS_IMPORT.test(answer)) return answer;
+  const notice = [
+    "> **Incomplete documentation excerpt \u2014 do not copy as a self-contained runnable config.**",
+    '> The official Pharos snippet calls `vars.get("PRIVATE_KEY")` but omits the `vars` import.',
+    ">",
+    `> **Separately verified correction (installed Hardhat ${VERIFIED_HARDHAT_VERSION}):** add this immediately after the toolbox import:`,
+    "> ```js",
+    '> const { vars } = require("hardhat/config");',
+    "> ```",
+    "> This import is not shown on the cited Pharos page; it is an independently verified compatibility correction.",
+    "> A forced local compile of the documented project succeeded with this import (six Solidity files). No deployment was run or broadcast."
+  ].join("\n");
+  return `${notice}
+
+${answer}`;
+}
 function classifyAnswer(question, text, sources = extractSources(text)) {
   const answer = stripSourcesSection(text);
   if (!answer || /^no good answer found\.?/i.test(answer)) {
@@ -19008,7 +19029,7 @@ async function retrievePage(client, source, timeoutMs) {
 }
 function answerGoal(pages, question) {
   const pageList = pages.map((page) => `- ${page.url}`).join("\n") || "- None";
-  const hardhatRequirements = question.toLowerCase().includes("hardhat") ? "For Hardhat deployment, use one example only. State prerequisites, repo/directory, known version/config syntax, network/RPC, key setup, dependencies, compile command, Ignition path and selected network. Flag missing version details or confusing step order; do not mix examples." : "";
+  const hardhatRequirements = question.toLowerCase().includes("hardhat") ? "For Hardhat deployment, use one example only. State prerequisites, repo/directory, version/config syntax, network/RPC, key setup, dependencies, compile command and Ignition path. If shown config uses vars.get without importing vars from hardhat/config, label it an incomplete docs excerpt; do not present it as runnable." : "";
   const networkRequirements = /mainnet|pacific/i.test(question) ? "For network settings, include the documented network name, chain ID, currency, RPC and explorer." : "";
   return [
     "Answer in concise Markdown using only the complete Pharos pages retrieved with getPage below.",
@@ -19032,7 +19053,8 @@ async function askDocs(questionInput, { timeoutMs = 6e4 } = {}) {
     const candidates = rankSearchResults(parseSearchResults(searchText), question).slice(0, MAX_INITIAL_PAGES);
     const pages = [];
     for (const candidate of candidates) pages.push(await retrievePage(client, candidate, timeoutMs));
-    const answerText = await callTextTool(client, "askQuestion", { question, goal: answerGoal(pages, question) }, timeoutMs);
+    const rawAnswerText = await callTextTool(client, "askQuestion", { question, goal: answerGoal(pages, question) }, timeoutMs);
+    const answerText = discloseIncompleteHardhatVarsExcerpt(rawAnswerText);
     const provisional = classifyAnswer(question, answerText);
     if (provisional.status === "no_answer") return provisional;
     const verified = new Map(pages.map((page) => [page.url, page]));
