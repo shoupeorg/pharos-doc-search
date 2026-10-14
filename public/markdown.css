@@ -1,0 +1,30 @@
+.answer > :first-child { margin-top: 0; }
+.answer > :last-child { margin-bottom: 0; }
+.answer h1,
+.answer h2,
+.answer h3,
+.answer h4 {
+  font-family: "Courier New", monospace;
+  line-height: 1.25;
+  margin: 1.35em 0 .55em;
+  letter-spacing: -.3px;
+}
+.answer h1 { font-size: 20px; }
+.answer h2 { font-size: 17px; }
+.answer h3,
+.answer h4 { font-size: 14px; }
+.answer p { margin: .7em 0; }
+.answer ul,
+.answer ol { margin: .7em 0; padding-left: 2em; }
+.answer li { margin: .35em 0; }
+.answer a { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+.answer pre {
+  overflow-x: auto;
+  max-width: 100%;
+  margin: 1em 0;
+  white-space: pre;
+  tab-size: 2;
+}
+.answer pre code { display: block; min-width: max-content; white-space: pre; }
+.answer hr { border: 0; border-top: 1px dashed #fff; margin: 1.4em 0; }
+.answer blockquote { border-left: 5px solid #fff; margin: 1em 0; padding: .15em 0 .15em 1em; }
