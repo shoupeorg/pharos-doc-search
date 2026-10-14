@@ -16,7 +16,7 @@
     "login": "wrangler login"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.27.1"
+    "@modelcontextprotocol/sdk": "^1.32.1"
   },
   "devDependencies": {
     "esbuild": "0.27.3",
