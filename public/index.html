@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Search the official Pharos developer documentation through Developer Docs MCP." />
+    <title>Pharos Doc-Search CLI</title>
+    <link rel="icon" href="/pharos-logo.png" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">
+        <img src="/pharos-logo.png" alt="Pharos logo" />
+        <span><b>PHAROS</b><small>DOC-SEARCH CLI</small></span>
+      </a>
+      <span class="network">DEVELOPER DOCS / MCP</span>
+    </header>
+
+    <main>
+      <section class="window" aria-label="Pharos documentation search">
+        <div class="titlebar">
+          <span class="glyph">⌕</span>
+          <b>DOC_SEARCH.EXE</b>
+          <span class="window-actions">_　□　×</span>
+        </div>
+
+        <div class="hero">
+          <p>PHAROS NETWORK / KNOWLEDGE TERMINAL</p>
+          <h1>ASK THE <i>OFFICIAL DOCS</i><span>_</span></h1>
+          <p class="dek">One question in. One concise, sourced answer out. Powered only by the official Pharos Developer Docs MCP.</p>
+        </div>
+
+        <form id="search-form" class="search-panel">
+          <label for="question">01 · DOCUMENTATION QUERY</label>
+          <div class="prompt-row">
+            <span class="prompt">$ pharos-docs</span>
+            <input id="question" name="question" maxlength="500" autocomplete="off" placeholder='"how do I deploy a contract?"' required />
+            <button id="search-button" type="submit">SEARCH →</button>
+          </div>
+          <div class="examples" aria-label="Example questions">
+            <span>TRY:</span>
+            <button type="button" data-question="How do I deploy a contract with Hardhat on Pharos?">DEPLOY A CONTRACT</button>
+            <button type="button" data-question="What are the Pharos Pacific Mainnet network settings?">MAINNET SETTINGS</button>
+            <button type="button" data-question="How do I get PROS gas?">GET PROS</button>
+          </div>
+        </form>
+
+        <section class="result-panel" aria-live="polite" aria-busy="false">
+          <div class="result-heading">
+            <span>02 · DOCS_MCP.OUT</span>
+            <b id="result-state">READY</b>
+          </div>
+          <div id="result" class="empty">
+            <strong>WAITING FOR QUERY</strong>
+            <p>Answers will appear here with links to their supporting documentation.</p>
+          </div>
+          <div id="sources" class="sources" hidden>
+            <h2>SOURCES</h2>
+            <ol id="source-list"></ol>
+          </div>
+        </section>
+
+        <footer class="statusbar">
+          <span><i class="status-dot"></i><b id="system-status">SYSTEM READY</b></span>
+          <span id="endpoint-status">DOCS MCP / READ ONLY</span>
+        </footer>
+      </section>
+    </main>
+
+    <footer class="page-footer">
+      <span>PHAROS AGENT ARENA · DOC-SEARCH CLI</span>
+      <a href="https://docs.pharos.xyz" target="_blank" rel="noreferrer">OFFICIAL DOCS ↗</a>
+    </footer>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
