@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildSearchQuery,
   classifyAnswer,
+  discloseIncompleteHardhatVarsExcerpt,
   extractSources,
   normalizeQuestion,
   parseSearchResults,
@@ -33,6 +34,19 @@ test("parses and ranks full-page candidates for a coherent Hardhat example", () 
 
 test("removes the duplicate MCP sources appendix from the displayed answer", () => {
   assert.equal(stripSourcesSection("Answer.\n\n# Sources\n- [Page](/page)"), "Answer.");
+});
+
+test("labels a documented vars.get config as incomplete and supplies the verified import", () => {
+  const answer = discloseIncompleteHardhatVarsExcerpt('```js\naccounts: [vars.get("PRIVATE_KEY")]\n```');
+  assert.match(answer, /Incomplete documentation excerpt/);
+  assert.match(answer, /installed Hardhat 2\.29\.1/);
+  assert.match(answer, /const \{ vars \} = require\("hardhat\/config"\);/);
+  assert.match(answer, /No deployment was run or broadcast/);
+});
+
+test("does not add a warning when the vars import is already present", () => {
+  const complete = 'const { vars } = require("hardhat/config");\naccounts: [vars.get("PRIVATE_KEY")]';
+  assert.equal(discloseIncompleteHardhatVarsExcerpt(complete), complete);
 });
 
 test("classifies the explicit unsupported response", () => {
